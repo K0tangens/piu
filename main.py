@@ -25,14 +25,11 @@ async def send_welcome(message: Message):
 async def send_welcome(message: Message):
     await message.reply("📌 Доступные команды:\n"
                         "/remind_time [время] [текст] - напомнить через время (например: 30м, 2ч15м, 1д)\n"
-                        "/remind_date [дата] [время] [текст] - напомнить в конкретное время (например: 25.12 15:30, 15:30)\n"
                         "/list - показать все напоминания\n"
                         "/delete [№] - удалить напоминание\n\n"
                         "📝 Примеры:\n"
                         "/remind_time 30м Позвонить маме\n"
-                        "/remind_time 2ч15м Сделать ДЗ\n"
-                        "/remind_date 25.12 15:30 Купить подарки\n"
-                        "/remind_date 15:30 Пообедать")
+                        "/remind_time 2ч15м Сделать ДЗ\n")
 
 @dp.message(Command(commands=['remind_time']))
 async def set_timed_reminder(message: Message):
@@ -53,29 +50,7 @@ async def set_timed_reminder(message: Message):
         await message.reply(f"Ошибка {e}\nФормат: /remind_time 30м Напоминание")
 
 
-@dp.message(Command(commands=['remind_date']))
-async def set_dated_reminder(message: Message):
-    try:
-        parts = message.text.split(maxsplit=3)
-        if len(parts) < 3:
-            raise ValueError("Ой! Кажется, вы неправильно ввели данные! Попробуйте еще раз")
 
-        _, date_str, time_str, *text_parts = parts
-        reminder_text = " ".join(text_parts) if text_parts else "Напоминание"
-
-        reminder_time = parse_datetime(date_str, time_str)
-        if reminder_time < datetime.now():
-            raise ValueError("Указанное время уже прошло")
-
-        await create_reminder(message.from_user.id, reminder_text, reminder_time)
-
-        await message.reply(f"Напоминание создано!\n"
-                            f"{reminder_time.strftime('%д.%м в %Ч:%М')} я напомню"
-                            f"{reminder_text}")
-
-    except Exception as e:
-        await message.reply(f"Ошибка: {e}\nФормат: /remind_date 25.12 15:30 Текст\n"
-                            "Или: /remind_date 15:30 Текст")
 
 
 async def create_reminder(user_id, text, reminder_time):
@@ -136,7 +111,7 @@ def parse_datetime(date_str, time_str):
 
         # Если указана дата (день и месяц)
         if '.' in date_str:
-            date_part = datetime.strptime(date_str, "%д.%м").date()
+            date_part = datetime.strptime(date_str, "%d.%m").date()
             return datetime.combine(date_part, time_part)
         else:
             # Только время - используем сегодня/завтра
@@ -149,7 +124,7 @@ def parse_datetime(date_str, time_str):
     except ValueError:
         # Если первый аргумент не дата, а время (когда дата не указана)
         if ':' in date_str:
-            time_part = datetime.strptime(date_str, "%Ч:%М").time()
+            time_part = datetime.strptime(date_str, "%H:%M").time()
             proposed_time = datetime.combine(now.date(), time_part)
             if proposed_time > now:
                 return proposed_time
@@ -160,28 +135,76 @@ def parse_datetime(date_str, time_str):
 
 @dp.message(Command(commands=['list']))
 async def list_reminders(message: Message):
-    user_id = message.from_user.id
-    if user_id not in user_reminders or not user_reminders[user_id]:
-        await message.reply("Ой! Вы ничего сюда не добавили")
-        return
+    try:
+        user_id = message.from_user.id
 
-    reply_text = "Ваши напоминания:\n\n"
-    for reminder_id in user_reminders[user_id]:
-        if reminder_id in reminders:
-            rem = reminders[reminder_id]
-            time_left = rem['time'] - datetime.now()
+        # Проверяем существование напоминаний у пользователя
+        if user_id not in user_reminders or not user_reminders[user_id]:
+            await message.reply(" У вас нет активных напоминаний.")
+            return
 
-            if time_left.total_seconds() > 0:
-                hours, remainder = divmod(time_left.total_seconds(), 3600)
-                minutes, _ = divmod(remainder, 60)
-                reply_text += f"№{reminder_id}: {rem['text']}\n"
-                reply_text += f"{rem['time'].strftime('%д.%м в %Ч:%М')} "
-                reply_text += f"(Тик-Так! Осталось: {int(hours)}ч {int(minutes)}м)\n\n"
-            else:
-                reply_text += f"№{reminder_id}: {rem['text']}\n"
-                reply_text += f"Должно было сработать: {rem['time'].strftime('%д.%м в %Ч:%М')}\n\n"
+        active_reminders = []
+        expired_reminders = []
+        current_time = datetime.now()
 
-    await message.reply(reply_text)
+        # Создаем копию списка, чтобы избежать изменения во время итерации
+        for reminder_id in list(user_reminders[user_id]):
+            if reminder_id in reminders:
+                reminder = reminders[reminder_id]
+                time_left = reminder['time'] - current_time
+
+                reminder_info = f" №{reminder_id}: {reminder['text']}\n" \
+                                f"    {reminder['time'].strftime('%d.%m.%Y в %H:%M')}\n" \
+                                f"    Осталось: {format_timedelta(time_left)}"
+
+                if time_left.total_seconds() > 0:
+                    active_reminders.append(reminder_info)
+                else:
+                    expired_reminders.append(reminder_info)
+                    # Автоматически удаляем просроченные
+                    del reminders[reminder_id]
+                    user_reminders[user_id].remove(reminder_id)
+
+        # Формируем ответ
+        reply_text = ""
+        if active_reminders:
+            reply_text += " Активные напоминания:\n\n" + "\n\n".join(active_reminders)
+        if expired_reminders:
+            if reply_text:
+                reply_text += "\n\n"
+            reply_text += " Просроченные напоминания:\n\n" + "\n\n".join(expired_reminders)
+
+        # Разбиваем сообщение если слишком длинное
+        if len(reply_text) > 4000:
+            parts = [reply_text[i:i + 4000] for i in range(0, len(reply_text), 4000)]
+            for part in parts:
+                await message.reply(part)
+                await asyncio.sleep(0.5)
+        else:
+            await message.reply(reply_text if reply_text else "❌ Не удалось загрузить напоминания")
+
+    except Exception as e:
+        await message.reply(f" Произошла ошибка при получении списка: {str(e)}")
+
+
+def format_timedelta(delta: timedelta) -> str:
+    """Форматирует timedelta в читаемый вид"""
+    total_seconds = int(delta.total_seconds())
+    days, remainder = divmod(total_seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    parts = []
+    if days > 0:
+        parts.append(f"{days} дн")
+    if hours > 0:
+        parts.append(f"{hours} ч")
+    if minutes > 0:
+        parts.append(f"{minutes} мин")
+    if seconds > 0 and not (days or hours):
+        parts.append(f"{seconds} сек")
+
+    return " ".join(parts) if parts else "менее минуты"
 
 
 @dp.message(Command(commands=['delete']))
