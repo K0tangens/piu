@@ -20,13 +20,13 @@ async def send_welcome(message: Message):
 
 @dp.message(Command(commands=[ 'help']))
 async def send_welcome(message: Message):
-    await message.reply("📌 Доступные команды:\n"
-                        "/remind_time [время] [текст] - напомнить через время (например: 30м, 2ч15м, 1д)\n"
+    await message.reply("Доступные команды:\n"
+                        "/remind_time [время] [текст] - напомнить через  (например: 30м, 2ч15м, 1д)\n"
                         "/list - показать все напоминания\n"
                         "/delete [№] - удалить напоминание\n\n"
-                        "📝 Примеры:\n"
-                        "/remind_time 30м Позвонить маме\n"
-                        "/remind_time 2ч15м Сделать ДЗ\n")
+                        "Примеры:\n"
+                        "/remind_time 30м Пресс качат\n"
+                        "/remind_time 2ч15м Анжуманя\n")
 
 @dp.message(Command(commands=['remind_time']))
 async def set_timed_reminder(message: Message):
@@ -40,13 +40,11 @@ async def set_timed_reminder(message: Message):
         reminder_time = datetime.now() + time_delta
 
         await create_reminder(message.from_user.id, reminder_text, reminder_time)
-        await message.reply(f"Напоминание создано!\n"
+        await message.reply(f"Ура! Напоминание успешно создано!\n"
                             f"Через {time_str} я напомню {reminder_text}")
 
     except Exception as e:
-        await message.reply(f"Ошибка {e}\nФормат: /remind_time 30м Напоминание")
-
-
+        await message.reply(f"Ошибка {e}\nФормат: /remind_time 30м текст")
 
 
 
@@ -98,7 +96,7 @@ async def list_reminders(message: Message):
         user_id = message.from_user.id
 
         if user_id not in user_reminders or not user_reminders[user_id]:
-            await message.reply(" У вас нет активных напоминаний.")
+            await message.reply(" У вас нет активных напоминаний.Вы можете добавить их через команду /remind_time")
             return
 
         active_reminders = []
@@ -112,7 +110,7 @@ async def list_reminders(message: Message):
 
                 reminder_info = f" №{reminder_id}: {reminder['text']}\n" \
                                 f"    {reminder['time'].strftime('%d.%m.%Y в %H:%M')}\n" \
-                                f"    Осталось: {format_timedelta(time_left)}"
+                                f"    Тик - Так! Осталось: {format_timedelta(time_left)}"
 
                 if time_left.total_seconds() > 0:
                     active_reminders.append(reminder_info)
@@ -138,7 +136,7 @@ async def list_reminders(message: Message):
             await message.reply(reply_text if reply_text else " Не удалось загрузить напоминания")
 
     except Exception as e:
-        await message.reply(f" Произошла ошибка при получении списка: {str(e)}")
+        await message.reply(f"Ой.. Произошла ошибка: {str(e)}")
 
 
 def format_timedelta(delta: timedelta) -> str:
@@ -157,7 +155,7 @@ def format_timedelta(delta: timedelta) -> str:
     if seconds > 0 and not (days or hours):
         parts.append(f"{seconds} сек")
 
-    return " ".join(parts) if parts else "менее минуты"
+    return " ".join(parts) if parts else "совсем чуть-чуть"
 
 
 @dp.message(Command(commands=['delete']))
@@ -171,7 +169,7 @@ async def delete_reminder(message: Message):
         reminder_id = parts[1].strip()
 
         if reminder_id not in reminders:
-            raise ValueError("Напоминание с таким номером не найдено")
+            raise ValueError("Вы уверены? Напоминание с таким номером не найдено")
 
         if reminders[reminder_id]['user_id'] != user_id:
             raise ValueError("Это не ваше напоминание. Оставьте его другим пользователям!")
